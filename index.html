@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <title>Drama Mini Player</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root {
+      --accent: #ff0066;
+      --bg: #111;
+      --card: #1a1a1a;
+      --text: #f2f2f2;
+      --radius: 6px;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, sans-serif;
+      line-height: 1.5;
+    }
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      background: #000;
+    }
+    header h1 {
+      font-size: 1.2rem;
+      letter-spacing: 0.5px;
+      margin-right: auto;
+    }
+    select, input[type="text"], button {
+      padding: 0.45rem 0.7rem;
+      border-radius: var(--radius);
+      border: none;
+      background: var(--card);
+      color: var(--text);
+    }
+    input[type="text"] {
+      flex: 1 1 160px;
+    }
+    button {
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+    }
+    main {
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+      padding: 1rem;
+    }
+    .section-title {
+      font-size: 1rem;
+      margin-top: 1rem;
+    }
+    .drama-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 0.8rem;
+    }
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .card:hover {
+      transform: scale(1.03);
+    }
+    .card img {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      display: block;
+    }
+    .card p {
+      padding: 0.5rem;
+      font-size: 0.8rem;
+      text-align: center;
+    }
+    .loading {
+      text-align: center;
+      padding: 2rem;
+      opacity: 0.6;
+    }
+    #playerContainer {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    #dramaPlayer {
+      width: 100%;
+      aspect-ratio: 9/16;
+      background: #000;
+      border-radius: var(--radius);
+    }
+    #downloadButton {
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Drama Mini Player</h1>
+    <select id="sourceSel">
+      <option value="melolo">Melolo</option>
+      <option value="dramabox">DramaBox</option>
+    </select>
+    <input id="searchInput" type="text" placeholder="Search for a drama..." />
+    <button id="searchButton">Search</button>
+  </header>
+
+  <main>
+    <!-- Popular -->
+    <h2 class="section-title">Popular Searches</h2>
+    <div id="popularSearches" class="drama-grid">
+      <div class="loading">Loading...</div>
+    </div>
+
+    <!-- Trending -->
+    <h2 class="section-title">Trending Dramas</h2>
+    <div id="trendingDramas" class="drama-grid">
+      <div class="loading">Loading...</div>
+    </div>
+
+    <!-- Latest -->
+    <h2 class="section-title">Latest Dramas</h2>
+    <div id="latestDramas" class="drama-grid">
+      <div class="loading">Loading...</div>
+    </div>
+
+    <!-- Search Results -->
+    <h2 class="section-title">Search Results</h2>
+    <div id="searchResults" class="drama-grid">
+      <div class="loading">Type & hit Search</div>
+    </div>
+
+    <!-- Player -->
+    <div id="playerContainer">
+      <h2 class="section-title">Watch Drama</h2>
+      <video id="dramaPlayer" controls poster="https://placehold.co/720x1280?text=Pick+a+drama">
+        Your browser does not support the video tag.
+      </video>
+      <button id="downloadButton" style="display: none;">Download Episode</button>
+    </div>
+  </main>
+
+  <script>
+    /* ---------- CONFIG ---------- */
+    const API = {
+      melolo: "https://melolo-api-azure.vercel.app/api/melolo",
+      dramabox: "https://dramabox.sansekai.my.id/api/dramabox"
+    };
+    const IMG = "https://wsrv.nl/?url=";
+
+    const $ = s => document.querySelector(s);
+    const sourceSel = $("#sourceSel");
+    const searchInput = $("#searchInput");
+    const searchButton = $("#searchButton");
+    const player = $("#dramaPlayer");
+    const downloadBtn = $("#downloadButton");
+
+    /* ---------- ROUTING ---------- */
+    sourceSel.onchange = () => loadAllSections();
+    searchButton.onclick = () => doSearch();
+    searchInput.onkeyup = e => { if (e.key === "Enter") doSearch(); };
+    window.onload = () => loadAllSections();
+
+    /* ---------- LOAD SEMUA SECTION (parallel) ---------- */
+    async function loadAllSections() {
+      const src = sourceSel.value;
+      $("#popularSearches").innerHTML = '<div class="loading">Loading...</div>';
+      $("#trendingDramas").innerHTML = '<div class="loading">Loading...</div>';
+      $("#latestDramas").innerHTML = '<div class="loading">Loading...</div>';
+
+      /* Popular */
+      try {
+        const pop = src === "melolo"
+          ? await (await fetch(`${API.melolo}/search?query=pewaris`)).json()
+          : await (await fetch(`${API.dramabox}/populersearch`)).json();
+        renderGrid("popularSearches", (src === "melolo" ? pop.books : pop.data) || []);
+      } catch {
+        renderGrid("popularSearches", []);
+      }
+
+      /* Trending */
+      try {
+        const tren = await (await fetch(src === "melolo"
+          ? `${API.melolo}/trending`
+          : `${API.dramabox}/trending`)).json();
+        renderGrid("trendingDramas", (src === "melolo" ? tren.books : tren.data) || []);
+      } catch {
+        renderGrid("trendingDramas", []);
+      }
+
+      /* Latest */
+      try {
+        const late = await (await fetch(src === "melolo"
+          ? `${API.melolo}/latest`
+          : `${API.dramabox}/latest`)).json();
+        renderGrid("latestDramas", (src === "melolo" ? late.books : late.data) || []);
+      } catch {
+        renderGrid("latestDramas", []);
+      }
+    }
+
+    /* ---------- SEARCH ---------- */
+    async function doSearch() {
+      const q = searchInput.value.trim();
+      if (!q) return;
+      const box = $("#searchResults");
+      box.innerHTML = '<div class="loading">Searching...</div>';
+      try {
+        const src = sourceSel.value;
+        const res = await (await fetch(src === "melolo"
+          ? `${API.melolo}/search?query=${encodeURIComponent(q)}`
+          : `${API.dramabox}/search?query=${encodeURIComponent(q)}`)).json();
+        renderGrid("searchResults", (src === "melolo" ? res.books : res.data) || []);
+      } catch {
+        box.innerHTML = '<div class="loading">Failed 😔</div>';
+      }
+    }
+
+    /* ---------- RENDER GRID ---------- */
+    function renderGrid(id, arr) {
+      const box = $(`#${id}`);
+      if (!arr.length) {
+        box.innerHTML = '<div class="loading">No data</div>';
+        return;
+      }
+      box.innerHTML = "";
+      arr.forEach(it => {
+        const card = document.createElement("div");
+        card.className = "card";
+
+        const img = document.createElement("img");
+        img.src = IMG + encodeURIComponent(it.thumb_url || it.poster || "");
+        img.loading = "lazy";
+
+        const p = document.createElement("p");
+        p.textContent = it.book_name || it.title || "Untitled";
+
+        card.appendChild(img);
+        card.appendChild(p);
+        card.onclick = () => playDrama(it);
+        box.appendChild(card);
+      });
+    }
+
+    /* ---------- PLAY DRAMA ---------- */
+    async function playDrama(item) {
+      const src = sourceSel.value;
+      player.pause();
+      downloadBtn.style.display = "none";
+
+      /* ambil stream pertama */
+      try {
+        let url;
+        if (src === "melolo") {
+          const detail = await (await fetch(`${API.melolo}/detail/${item.book_id}`)).json();
+          const firstVid = detail.videos?.[0]?.vid_id;
+          if (!firstVid) throw "No video";
+          const stream = await (await fetch(`${API.melolo}/stream/${firstVid}`)).json();
+          url = stream.data?.main_url || stream.main_url;
+        } else {
+          const epRes = await (await fetch(`${API.dramabox}/allepisode?bookId=${item.book_id}`)).json();
+          const firstVid = epRes.data?.[0]?.vid_id;
+          if (!firstVid) throw "No video";
+          const stream = await (await fetch(`${API.dramabox}/stream/${firstVid}`)).json();
+          url = stream.data?.main_url || stream.main_url;
+        }
+        if (!url) throw "Empty url";
+        player.src = url;
+        player.play();
+        downloadBtn.style.display = "inline-block";
+        downloadBtn.onclick = () => window.open(url, "_blank");
+      } catch (e) {
+        console.error(e);
+        alert("Gagal memutar video 😔");
+      }
+    }
+  </script>
+</body>
+</html>
