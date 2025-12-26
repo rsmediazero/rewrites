@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
   <meta charset="utf-8" />
-  <title>Drama Mini Player</title>
+  <title>Drama Mini Player (CORS-safe)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     :root {
@@ -156,11 +156,8 @@
 
   <script>
     /* ---------- CONFIG ---------- */
-    const API = {
-      melolo: "https://melolo-api-azure.vercel.app/api/melolo",
-      dramabox: "https://dramabox.sansekai.my.id/api/dramabox"
-    };
-    const IMG = "https://wsrv.nl/?url=";
+    // ALWAYS call our own proxy → no CORS
+    const API_BASE = '/api/proxy';
 
     const $ = s => document.querySelector(s);
     const sourceSel = $("#sourceSel");
@@ -184,9 +181,7 @@
 
       /* Popular */
       try {
-        const pop = src === "melolo"
-          ? await (await fetch(`${API.melolo}/search?query=pewaris`)).json()
-          : await (await fetch(`${API.dramabox}/populersearch`)).json();
+        const pop = await fetchJson(`${API_BASE}/${src}/populersearch`);
         renderGrid("popularSearches", (src === "melolo" ? pop.books : pop.data) || []);
       } catch {
         renderGrid("popularSearches", []);
@@ -194,9 +189,7 @@
 
       /* Trending */
       try {
-        const tren = await (await fetch(src === "melolo"
-          ? `${API.melolo}/trending`
-          : `${API.dramabox}/trending`)).json();
+        const tren = await fetchJson(`${API_BASE}/${src}/trending`);
         renderGrid("trendingDramas", (src === "melolo" ? tren.books : tren.data) || []);
       } catch {
         renderGrid("trendingDramas", []);
@@ -204,9 +197,7 @@
 
       /* Latest */
       try {
-        const late = await (await fetch(src === "melolo"
-          ? `${API.melolo}/latest`
-          : `${API.dramabox}/latest`)).json();
+        const late = await fetchJson(`${API_BASE}/${src}/latest`);
         renderGrid("latestDramas", (src === "melolo" ? late.books : late.data) || []);
       } catch {
         renderGrid("latestDramas", []);
@@ -221,9 +212,7 @@
       box.innerHTML = '<div class="loading">Searching...</div>';
       try {
         const src = sourceSel.value;
-        const res = await (await fetch(src === "melolo"
-          ? `${API.melolo}/search?query=${encodeURIComponent(q)}`
-          : `${API.dramabox}/search?query=${encodeURIComponent(q)}`)).json();
+        const res = await fetchJson(`${API_BASE}/${src}/search?query=${encodeURIComponent(q)}`);
         renderGrid("searchResults", (src === "melolo" ? res.books : res.data) || []);
       } catch {
         box.innerHTML = '<div class="loading">Failed 😔</div>';
@@ -243,7 +232,7 @@
         card.className = "card";
 
         const img = document.createElement("img");
-        img.src = IMG + encodeURIComponent(it.thumb_url || it.poster || "");
+        img.src = "https://wsrv.nl/?url=" + encodeURIComponent(it.thumb_url || it.poster || "");
         img.loading = "lazy";
 
         const p = document.createElement("p");
@@ -266,16 +255,16 @@
       try {
         let url;
         if (src === "melolo") {
-          const detail = await (await fetch(`${API.melolo}/detail/${item.book_id}`)).json();
+          const detail = await fetchJson(`${API_BASE}/melolo/detail/${item.book_id}`);
           const firstVid = detail.videos?.[0]?.vid_id;
           if (!firstVid) throw "No video";
-          const stream = await (await fetch(`${API.melolo}/stream/${firstVid}`)).json();
+          const stream = await fetchJson(`${API_BASE}/melolo/stream/${firstVid}`);
           url = stream.data?.main_url || stream.main_url;
         } else {
-          const epRes = await (await fetch(`${API.dramabox}/allepisode?bookId=${item.book_id}`)).json();
+          const epRes = await fetchJson(`${API_BASE}/dramabox/allepisode?bookId=${item.book_id}`);
           const firstVid = epRes.data?.[0]?.vid_id;
           if (!firstVid) throw "No video";
-          const stream = await (await fetch(`${API.dramabox}/stream/${firstVid}`)).json();
+          const stream = await fetchJson(`${API_BASE}/dramabox/stream/${firstVid}`);
           url = stream.data?.main_url || stream.main_url;
         }
         if (!url) throw "Empty url";
@@ -287,6 +276,13 @@
         console.error(e);
         alert("Gagal memutar video 😔");
       }
+    }
+
+    /* ---------- UTIL ---------- */
+    async function fetchJson(u) {
+      const r = await fetch(u);
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
     }
   </script>
 </body>
