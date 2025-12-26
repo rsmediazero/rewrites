@@ -156,8 +156,7 @@
 
   <script>
     /* ---------- CONFIG ---------- */
-    // ALWAYS call our own proxy → no CORS
-    const API_BASE = '/api/proxy';
+    const API_BASE = '/api/proxy';   // lewat fungsi proxy Vercel
 
     const $ = s => document.querySelector(s);
     const sourceSel = $("#sourceSel");
@@ -172,36 +171,20 @@
     searchInput.onkeyup = e => { if (e.key === "Enter") doSearch(); };
     window.onload = () => loadAllSections();
 
-    /* ---------- LOAD SEMUA SECTION (parallel) ---------- */
+    /* ---------- LOAD SEMUA SECTION ---------- */
     async function loadAllSections() {
       const src = sourceSel.value;
-      $("#popularSearches").innerHTML = '<div class="loading">Loading...</div>';
-      $("#trendingDramas").innerHTML = '<div class="loading">Loading...</div>';
-      $("#latestDramas").innerHTML = '<div class="loading">Loading...</div>';
+      ["popularSearches", "trendingDramas", "latestDramas"]
+        .forEach(id => $(`#${id}`).innerHTML = '<div class="loading">Loading...</div>');
 
-      /* Popular */
-      try {
-        const pop = await fetchJson(`${API_BASE}/${src}/populersearch`);
-        renderGrid("popularSearches", (src === "melolo" ? pop.books : pop.data) || []);
-      } catch {
-        renderGrid("popularSearches", []);
-      }
+      const pop = await safeFetch(`${API_BASE}/${src}/populersearch`);
+      renderGrid("popularSearches", pop);
 
-      /* Trending */
-      try {
-        const tren = await fetchJson(`${API_BASE}/${src}/trending`);
-        renderGrid("trendingDramas", (src === "melolo" ? tren.books : tren.data) || []);
-      } catch {
-        renderGrid("trendingDramas", []);
-      }
+      const tren = await safeFetch(`${API_BASE}/${src}/trending`);
+      renderGrid("trendingDramas", tren);
 
-      /* Latest */
-      try {
-        const late = await fetchJson(`${API_BASE}/${src}/latest`);
-        renderGrid("latestDramas", (src === "melolo" ? late.books : late.data) || []);
-      } catch {
-        renderGrid("latestDramas", []);
-      }
+      const late = await safeFetch(`${API_BASE}/${src}/latest`);
+      renderGrid("latestDramas", late);
     }
 
     /* ---------- SEARCH ---------- */
@@ -210,20 +193,29 @@
       if (!q) return;
       const box = $("#searchResults");
       box.innerHTML = '<div class="loading">Searching...</div>';
+      const res = await safeFetch(`${API_BASE}/${sourceSel.value}/search?query=${encodeURIComponent(q)}`);
+      renderGrid("searchResults", res);
+    }
+
+    /* ---------- SAFE FETCH + NORMALISASI ---------- */
+    async function safeFetch(url) {
       try {
-        const src = sourceSel.value;
-        const res = await fetchJson(`${API_BASE}/${src}/search?query=${encodeURIComponent(q)}`);
-        renderGrid("searchResults", (src === "melolo" ? res.books : res.data) || []);
-      } catch {
-        box.innerHTML = '<div class="loading">Failed 😔</div>';
+        const r = await fetch(url);
+        const j = await r.json();
+        console.log('RAW RESPONSE:', j); // lihat di console
+        // 4 kemungkinan key
+        return j.books || j.data || j.result || j.items || [];
+      } catch (e) {
+        console.error(e);
+        return [];
       }
     }
 
     /* ---------- RENDER GRID ---------- */
     function renderGrid(id, arr) {
       const box = $(`#${id}`);
-      if (!arr.length) {
-        box.innerHTML = '<div class="loading">No data</div>';
+      if (!Array.isArray(arr) || !arr.length) {
+        box.innerHTML = '<div class="loading">No dramas found</div>';
         return;
       }
       box.innerHTML = "";
@@ -232,11 +224,12 @@
         card.className = "card";
 
         const img = document.createElement("img");
-        img.src = "https://wsrv.nl/?url=" + encodeURIComponent(it.thumb_url || it.poster || "");
+        img.src = "https://wsrv.nl/?url=" +
+          encodeURIComponent(it.thumb_url || it.poster || it.coverWap || "https://placehold.co/160x228?text=No+Image");
         img.loading = "lazy";
 
         const p = document.createElement("p");
-        p.textContent = it.book_name || it.title || "Untitled";
+        p.textContent = it.book_name || it.title || it.bookName || "Untitled";
 
         card.appendChild(img);
         card.appendChild(p);
@@ -250,22 +243,20 @@
       const src = sourceSel.value;
       player.pause();
       downloadBtn.style.display = "none";
-
-      /* ambil stream pertama */
       try {
         let url;
         if (src === "melolo") {
-          const detail = await fetchJson(`${API_BASE}/melolo/detail/${item.book_id}`);
-          const firstVid = detail.videos?.[0]?.vid_id;
+          const detail = await safeFetch(`${API_BASE}/melolo/detail/${item.book_id}`);
+          const firstVid = detail[0]?.vid_id || detail.videos?.[0]?.vid_id;
           if (!firstVid) throw "No video";
-          const stream = await fetchJson(`${API_BASE}/melolo/stream/${firstVid}`);
-          url = stream.data?.main_url || stream.main_url;
+          const stream = await safeFetch(`${API_BASE}/melolo/stream/${firstVid}`);
+          url = stream.main_url || stream.data?.main_url;
         } else {
-          const epRes = await fetchJson(`${API_BASE}/dramabox/allepisode?bookId=${item.book_id}`);
-          const firstVid = epRes.data?.[0]?.vid_id;
+          const epRes = await safeFetch(`${API_BASE}/dramabox/allepisode?bookId=${item.book_id}`);
+          const firstVid = epRes[0]?.vid_id || epRes.data?.[0]?.vid_id;
           if (!firstVid) throw "No video";
-          const stream = await fetchJson(`${API_BASE}/dramabox/stream/${firstVid}`);
-          url = stream.data?.main_url || stream.main_url;
+          const stream = await safeFetch(`${API_BASE}/dramabox/stream/${firstVid}`);
+          url = stream.main_url || stream.data?.main_url;
         }
         if (!url) throw "Empty url";
         player.src = url;
@@ -276,13 +267,6 @@
         console.error(e);
         alert("Gagal memutar video 😔");
       }
-    }
-
-    /* ---------- UTIL ---------- */
-    async function fetchJson(u) {
-      const r = await fetch(u);
-      if (!r.ok) throw new Error(r.status);
-      return r.json();
     }
   </script>
 </body>
